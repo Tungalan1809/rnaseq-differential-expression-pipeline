@@ -7,3 +7,19 @@ work/
 *.fa
 *.gz
 *.gtf
+# Logs and temporary files
+*.log
+*.tex
+
+# Alignment files (safety)
+*.bam
+*.bam.bai
+*.bai
+*.sam
+
+# Reports (optional but recommended)
+*.html
+
+# OS / editor junk
+.DS_Store
+*.swp

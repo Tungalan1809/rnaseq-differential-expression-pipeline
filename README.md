@@ -1,17 +1,81 @@
-# Project 2: RNAseq
+# RNA‑seq Differential Expression Analysis Pipeline
 
-Please refer to the [instructions](https://bu-bioinfo.github.io/bf528/projects/project_2_rnaseq/)
-on the website for how to complete project 2. 
+This repository contains a complete **RNA‑seq differential expression analysis pipeline** developed as part of the BF528 Genomic Data Analysis coursework at Boston University. The workflow performs quality control, alignment, gene quantification, differential expression, and pathway analysis on human RNA‑seq samples.
 
-# Reminders
-- The week divisions in the directions are just suggestions for a reasonable amount of progress. The
-final report will be due on the listed date in the schedule.
+---
 
-- I will make sample results available partway through the project to ensure that everyone can proceed to the biological analysis at some point. I will also reveal the original publication around
-this time so that you may compare your findings 
+## **Project Overview**
 
-- Only switch to the full data when you are 100% sure your pipeline works end-to-end. Please also
-make sure that you only run your pipeline once on the full data and to delete any old runs if you do
-happen to run it multiple times.
+The goal of this project is to implement a reproducible and scalable RNA‑seq pipeline using **Nextflow** and modern bioinformatics tools to go from raw sequencing reads to biologically meaningful insights, including enrichment of signaling pathways and transcriptional programs.
 
-- Be mindful of time and make sure that you don't fall too behind. Please reach out to the TAs or myself if you do find yourself struggling and unable to advance. 
+This project follows the BF528 course guidelines for RNA‑seq and is based on the BF528 project 2 specification. :contentReference[oaicite:0]{index=0}
+
+---
+
+## **Pipeline Summary**
+
+The analysis performs the following major steps:
+
+1. **Quality Control**
+   - Evaluate raw read quality using tools like **FastQC**
+   - Aggregate QC reports for overview
+
+2. **Alignment**
+   - Map reads to the reference human genome using **STAR**
+
+3. **Read Quantification**
+   - Quantify gene‑level expression using **VERSE**
+
+4. **Differential Expression**
+   - Compare sample groups to identify differentially expressed genes
+
+5. **Pathway Enrichment**
+   - Conduct Gene Set Enrichment Analysis (GSEA/fgsea) to interpret biological signal
+
+---
+
+## **Tools & Technologies**
+
+This pipeline uses open‑source tools widely adopted in computational biology, including:
+
+| Component | Tool |
+|-----------|------|
+| Workflow management | Nextflow |
+| Quality control | FastQC, MultiQC |
+| Alignment | STAR |
+| Gene counting | VERSE |
+| Differential expression | DESeq2 (in R) |
+| Pathway analysis | fgsea (R package) |
+| Scripting | Python (`bin/`) |
+| Version control | Git, GitHub |
+
+---
+
+## **Repository Structure**
+
+├── bin/ # Python scripts for data handling
+├── modules/ # Nextflow modules for pipeline steps
+├── main.nf # Nextflow pipeline configuration
+├── nextflow.config # Pipeline parameters and settings
+├── sample_sheet.csv # Example sample metadata
+├── project2_analysis.Rmd # R analysis and visualization
+└── README.md # Project overview (this file)
+
+## **Results & Interpretation**
+
+The pipeline produces:
+Gene‑level count matrices
+Differential expression results
+Enrichment summaries of key pathways (e.g., immune, metabolic, stress response)
+Visualizations in R (volcano plots, PCA, etc.)
+
+**Use Case**
+
+This pipeline can be adapted to:
+Differential expression studies (case vs. control)
+Time‑course experiments
+Replication studies using public datasets
+
+## **License**
+
+This project is part of academic coursework and intended for educational and non‑commercial use.

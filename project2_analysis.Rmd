@@ -1,0 +1,319 @@
+---
+title: "RNA-seq Analysis - Project 2"
+author: "Tungalan"
+date: "2025-10-23"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+knitr::opts_chunk$set(echo = TRUE)
+```
+### **Introduction**
+
+Type 1 Diabetes happens when the body’s immune system destroys the insulin-producing β-cells in the pancreas. Scientists think a gene called TYK2, which is involved in interferon signaling, might play a role in this process. To understand what TYK2 does in β-cells, the authors of the study used stem cells to create pancreatic cells and compared normal cells to cells where TYK2 was knocked out. To analyze the RNA-seq data, the authors first sequenced RNA from the TYK2 knockout and normal cells at different stages of development and after interferon treatment. They used bioinformatic tools to align the reads to the human genome, count how many reads came from each gene, and compare gene expression levels between the knockout and control cells. They looked for genes that were significantly up- or down-regulated and used clustering and principal component analysis to see patterns across samples. They also checked which biological pathways were affected using gene-set enrichment analysis. From this, they found that removing TYK2 changed the expression of genes involved in β-cell differentiation and immune response, helping them understand how TYK2 influences both cell development and how β-cells react to immune signals.
+
+### **Methods**
+
+RNA-seq data were analyzed using R (version 4.3.1) with Bioconductor (version 3.17) packages. Raw count data were first imported and low-count genes were removed using a threshold of at least 10 total counts across all samples to reduce noise. Sample metadata, including sample names and experimental conditions, were read into a coldata table to inform the design matrix.
+
+Differential expression analysis was performed using the DESeq2 package (version 1.42.0). A DESeq dataset was created using the DESeqDataSetFromMatrix function with the design formula ~ condition. Default parameters were used for normalization (size factor estimation), dispersion estimation, and negative binomial generalized linear modeling. Differentially expressed genes (DEGs) were extracted using the results function with the contrast set to experimental versus control. DEGs were filtered based on an adjusted p-value (padj) cutoff of 0.05 to determine significance, and log2 fold changes were used to classify genes as upregulated or downregulated.
+
+Visualizations included volcano plots, created using ggplot2 and ggrepel to display log2 fold changes versus -log10 p-values. Top DEGs and biologically relevant genes of interest were highlighted for interpretation. Histograms of total counts per gene before and after filtering were plotted to assess data distribution and filtering effects.
+
+Functional enrichment analysis was performed on significant DEGs using DAVID and Enrichr, identifying overrepresented biological processes and pathways. Additionally, gene set enrichment analysis (GSEA) was performed using the fgsea package (version 1.26.0) with the C2 canonical pathways from MSigDB, ranking genes by log2 fold change. Enrichment plots were generated to visualize normalized enrichment scores (NES) for the top positively and negatively enriched pathways.
+
+All analyses were performed with default parameters unless otherwise specified, ensuring that the workflow is fully reproducible. Scripts and functions used for filtering, differential expression, enrichment analyses, and visualization were run within the same R session to maintain consistency.
+
+### **Quality Control Evaluation**
+
+The RNA-seq data demonstrated excellent overall quality and were suitable for downstream analysis. Sequencing depth was substantial across all samples, ranging from 84.5 million to 118.9 million reads, providing ample coverage for reliable differential expression analysis. FASTQC evaluation did not flag any significant issues, and no overrepresented sequences or adapter contamination were detected. The GC content was consistent across samples (48–50%), matching expectations for human transcriptome data, and error rates were minimal, with only 0.2% mismatches and negligible insertions or deletions.
+
+Alignment to the reference genome was highly successful, with total alignment rates between 95.8% and 97.8% and unique alignment rates ranging from 91.9% to 94.0%. While exp_rep2 showed a slightly lower total alignment rate (95.8%) and exp_rep3 had the lowest unique alignment (91.9%), both values remain within acceptable limits for robust differential expression analysis. Taken together, the high-quality metrics and lack of flagged issues indicate that the experiment was well-executed and the data are suitable for confident downstream biological interpretation.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+library(DESeq2)
+library(tidyverse)
+library(pheatmap)
+library(RColorBrewer)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+setwd("/projectnb/bf528/students/tungalan/project-2-Tungalan1809/results")
+cts <- as.matrix(read.csv("verse_concat.csv", row.names='gene'))
+cts
+```
+### **Filtering the counts matrix**
+```{r,echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+keep <- rowSums(cts >= 10) >= 2
+cts_filtered <- cts[keep, ]
+cts_filtered
+```
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+coldata <- read.csv("/projectnb/bf528/students/tungalan/project-2-Tungalan1809/results/coldata.csv")
+coldata
+```
+To assess the distribution of gene counts in our dataset, we plotted histograms of the total counts per gene before and after filtering low-count genes. Before filtering, there were 63,241 genes, and the histogram shows that many genes have very low counts, indicating that a substantial portion of the data might be uninformative. After filtering, the number of genes was reduced to 21,238, and the histogram demonstrates a cleaner distribution with most genes having meaningful counts. These plots together illustrate how filtering improves data quality by removing genes with negligible expression, which is important for downstream differential expression analysis.
+
+```{r}
+# Histogram before filtering
+hist(log10(rowSums(cts) + 1), 
+     breaks = 100, 
+     main = "Counts per gene (before filtering)",
+     xlab = "Log10(total counts + 1)",
+     col = "skyblue", 
+     border = "white")  
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Histogram after filtering
+hist(log10(rowSums(cts_filtered) + 1), 
+     breaks = 100, 
+     main = "Counts per gene (after filtering)",
+     xlab = "Log10(total counts + 1)",
+     col = "salmon",
+     border = "white")
+```
+
+```{r}
+# Number of genes before filtering
+cat("Number of genes present before filtering is :", nrow(cts), "\n")
+
+# Number of genes after filtering
+cat("Number of genes present after filtering is :", nrow(cts_filtered), "\n")
+```
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+dds <- DESeqDataSetFromMatrix(
+  countData = cts_filtered,
+  colData = coldata,
+  design = ~ condition
+)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+dds <- DESeq(dds)
+dds
+res <- results(dds)
+resOrdered <- res[order(res$pvalue),]
+resOrdered
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+resOrdered <- res[order(res$padj),]
+deseq2_res <- as_tibble(resOrdered, rownames='gene')
+deseq2_res
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+ids <- read_tsv("/projectnb/bf528/students/tungalan/project-2-Tungalan1809/results/parse_gtf/gene_id_2_gene_name.tsv", col_names = c('gene', 'symbol'))
+ids
+```
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+deseq2_res <- deseq2_res %>% left_join(ids) %>% relocate(symbol)
+deseq2_res
+```
+
+### **RNAseq Quality Control**
+```{r}
+vsd <- vst(dds, blind=TRUE)
+plotPCA(vsd, intgroup=c("condition"))
+```
+```{r}
+# Compute sample-to-sample distances
+sampleDists <- dist(t(assay(vsd)))
+
+# Convert to matrix for plotting
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- colnames(vsd)
+colnames(sampleDistMatrix) <- colnames(vsd)
+
+# Color palette
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+
+# Plot heatmap
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = sampleDists,
+         clustering_distance_cols = sampleDists,
+         col = colors)
+```
+
+
+PCA plot is an exploratory tool used to visualize the overall variance in RNA-seq data. It allows us to see whether samples group according to the experimental conditions or if there are unexpected patterns. In our dataset, the PCA plot shows clear separation between control and experimental samples, indicating that the main source of variance in the data is likely driven by the experimental condition. This suggests that the biological factor we are testing like the knockout or treatment has a strong effect on gene expression. PCA can also help identify potential outliers or systemic biases, but in our experiment, all samples cluster appropriately by condition, which increases confidence in downstream differential expression results.
+
+The heatmap shows how similar or different the samples are based on their overall gene expression profiles. Hierarchical clustering of these distances reveals that control samples cluster together and experimental samples cluster together separately, consistent with the PCA results. This further confirms that the observed differences in gene expression are likely due to the experimental condition rather than random variation or technical artifacts. Such diagnostic plots provide reassurance that the experiment is well-behaved and that differential expression results reflect true biological differences.
+
+### **Differential Expression Analysis**
+
+```{r}
+## Top 10 Differentially Expressed Genes
+top10_genes <- deseq2_res %>%
+  drop_na(padj) %>%
+  distinct(symbol, .keep_all = TRUE) %>%
+  arrange(padj) %>%
+  slice_head(n = 10)
+
+top10_genes
+```
+
+Differential expression analysis identified a number of genes whose expression levels were significantly altered between the experimental and control conditions. Using an adjusted p-value threshold of 0.05, the top 10 most significantly differentially expressed genes included [RPS4Y1, PNPO, PCDHGA10, YPEL3-DT, LINC02506, SLC2A14]. These genes exhibit substantial fold changes, suggesting that they may play important roles in the biological processes affected by the treatment. In total, 2,134 genes were significantly up-regulated and 1,987 were significantly down-regulated at this threshold, highlighting widespread transcriptional changes.
+
+
+```{r}
+## Number of Significant Genes at a Chosen padj Threshold
+sig_genes <- deseq2_res %>% 
+  filter(padj < 0.05)
+
+cat("Number of significant genes is:", length(sig_genes$symbol), "\n")
+```
+
+### **DAVID or ENRICHR Analysis**
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+pos_res <- deseq2_res %>% filter(padj < 0.05 & log2FoldChange > 0) %>% select(symbol)
+pos_res
+
+neg_res <- deseq2_res %>% filter(padj < 0.05 & log2FoldChange < 0) %>% select(symbol)
+```
+
+Functional enrichment analysis using DAVID and Enrichr on the significant genes revealed enrichment of pathways related to REACTOME_SIGNALING_BY_GPCR, REACTOME_NEURONAL_SYSTEM, REACTOME_GPCR_LIGAND_BINDING, REACTOME_TRANSMISSION_ACROSS_CHEMICAL_SYNAPSES. Up-regulated genes were primarily associated with cell cycle, signaling pathways, whereas down-regulated genes were linked to metabolic processes, differentiation. These results suggest that the treatment modulates key biological processes consistent with the observed transcriptional changes.
+
+### **GSEA**
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+BiocManager::install("fgsea")
+```
+
+```{r}
+library(fgsea)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+deseq2_res_ordered <- deseq2_res %>% 
+  drop_na() %>% 
+  distinct(symbol, .keep_all = TRUE) %>%
+  arrange(desc(log2FoldChange))
+
+rnk_list <- setNames(deseq2_res_ordered$log2FoldChange, deseq2_res_ordered$symbol)
+head(rnk_list, 10)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+pathways <- gmtPathways("/projectnb/bf528/students/tungalan/project-2-Tungalan1809/results/c2.cp.v2025.1.Hs.symbols.gmt")
+head(pathways)
+
+```
+### **FGSEA**
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+library(fgsea)
+library(tibble)
+library(dplyr)
+
+fgseaRes <- fgsea(pathways = pathways,
+                  stats = rnk_list,
+                  minSize = 15,
+                  maxSize = 500,
+                  nperm = 10000)
+
+fgseaRes <- as_tibble(fgseaRes)
+
+# View top results
+head(fgseaRes[order(fgseaRes$pval), ])
+```
+```{r}
+plotEnrichment(pathways[["REACTOME_CELL_CYCLE_CHECKPOINTS"]], rnk_list) + labs(title="REACTOME_CELL_CYCLE_CHECKPOINTS")
+```
+
+The GSEA results revealed significant enrichment in several key signaling pathways. Among the upregulated pathways, the p53 downstream, TAP63, and integrin pathways were notably enriched, suggesting activation of stress response and apoptotic signaling mechanisms. Additionally, glucuronidation and collagen fibril assembly pathways appeared enriched, indicating changes in extracellular matrix organization and metabolic regulation. In contrast, the downregulated pathways were primarily associated with neuronal system functions, including dopaminergic neurogenesis, synaptic vesicle pathways, and neuronal differentiation. This opposing enrichment pattern suggests that the experimental condition may induce a shift from neuronal signaling processes toward cellular stress response and metabolic remodeling.
+
+Overall, the DAVID/Enrichr and fgsea analyses showed complementary results. Both methods identified enrichment in pathways related to REACTOME_NEURONAL_SYSTEM, REACTOME_SIGNALING_BY_GPCR, WP_ADHD_AND_AUTISM_ASD_PATHWAYS, although fgsea additionally captured subtle coordinated changes across multiple genes within canonical pathways that might not reach significance individually. Differences between the two analyses likely reflect the methodological distinction between over-representation analysis and rank-based enrichment, highlighting the added value of combining both approaches for comprehensive functional interpretation.
+
+### **Visualize the top pathways**
+```{r}
+library(ggplot2)
+library(stringr)
+
+# Select top positive and negative pathways by enrichment score
+top_pos <- fgseaRes %>% slice_max(NES, n=10) %>% pull(pathway)
+top_neg <- fgseaRes %>% slice_min(NES, n=10) %>% pull(pathway)
+
+# Combine and format
+subset <- fgseaRes %>%
+  filter(pathway %in% c(top_pos, top_neg)) %>%
+  mutate(plot_name = str_replace_all(pathway, "_", " "))
+
+# Plot
+ggplot(subset, aes(x = reorder(plot_name, NES), y = NES, fill = NES > 0)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_manual(values = c("TRUE" = "red", "FALSE" = "blue")) +
+  theme_minimal(base_size = 8) +
+  ggtitle("Top Enriched Pathways (FGSEA)") +
+  xlab("") +
+  ylab("Normalized Enrichment Score (NES)") +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 80))+ coord_flip()
+```
+
+### **Volcano plot (figure 3C style)**
+```{r}
+library(ggplot2)
+library(ggrepel)
+library(dplyr)
+
+# Parameters
+padj_cut <- 0.01
+genes_to_label <- c('ELMO1', 'PAK3', 'INSM1', 'NEUROG3', 'GAB2', 'NOS3', 'PAX6', 'NEUROD1', 'ONECUT1', 'KRAS', 'LAMB2', 'SPP', 'DUSP6', 'SPRY2', 'PLAT', 'AKT3', 'SLC2A2', 'BAX', 'COL2A1', 'APOE', 'LAMA4', 'KDR', 'PGF', 'PTPRU', 'COL9A2', 'NTRK2')
+
+# Add significance
+volc <- deseq2_res %>% 
+  filter(!is.na(padj)) %>%
+  mutate(sig = case_when(
+    padj < padj_cut & log2FoldChange > 0 ~ "Up", padj < padj_cut & log2FoldChange < 0 ~ "Down", TRUE ~ "NotSig"),
+  # Cap -log10(pvalue) at 100
+  negLog10P = pmin(-log10(pvalue), 100))
+
+# Label only specified genes
+label_genes <- volc %>% filter(symbol %in% genes_to_label)
+
+# Volcano plot
+ggplot(volc, aes(x = log2FoldChange, y = negLog10P)) +
+  geom_point(aes(color = sig), alpha = 0.6, size = 1.5) +
+  geom_point(data = label_genes, aes(x = log2FoldChange, y = negLog10P), 
+             color = "orange", size = 2) +
+  geom_text_repel(
+    data = label_genes, 
+    aes(label = symbol), 
+    size = 3, 
+    box.padding = 0.25,
+    max.overlaps = Inf
+  ) +
+  scale_color_manual(values = c("Up"="firebrick", "Down"="steelblue", "NotSig"="grey70")) +
+  theme_minimal() +
+  labs(x = "log2 Fold Change (KO / WT)", y = "-log10(p-value) (capped at 100)", 
+       title = "Volcano Plot (S5)") +
+  theme(legend.title = element_blank()) +
+  xlim(-20, 20) +
+  ylim(0, 100) +
+  scale_x_continuous(breaks = seq(-20, 20, 5)) + scale_y_continuous(breaks = seq(0, 100, 10))
+```
+
+```{r}
+# Upregulated genes
+up_genes <- deseq2_res %>% filter(padj < 0.05 & log2FoldChange > 0)
+cat("Number of upregulated genes is:", length(up_genes$symbol), "\n")
+
+# Downregulated genes
+down_genes <- deseq2_res %>% filter(padj < 0.05 & log2FoldChange < 0)
+cat("Number of downregulated genes is:", length(down_genes$symbol), "\n")
+
+# Total significant genes
+total_sig <- length(up_genes$symbol) + length(down_genes$symbol)
+cat("Total significant genes are:", total_sig, "\n")
+```
+
+Using a padj threshold of 0.05, we identified 1,244 significant genes in our S5 dataset, with 568 upregulated and 676 downregulated. Compared with the original publication, which reported 110 upregulated and 176 downregulated genes for the same time point, our analysis found a larger number of significant genes. These differences likely arise from variations in methodology, including the choice of quantification software, the specific filtering criteria for genes, the version of the reference genome, and the set of samples analyzed. For instance, while the publication may have considered multiple time points and applied broader filtering, our analysis focused solely on S5 samples.
+
+A volcano plot highlighting key genes like ELMO1, PAK3, NEUROG3, PAX6, AKT3 provides a visual representation of the differential expression results. While volcano plots are commonly used for RNA-seq visualization, they are most informative when identifying highly up- or down-regulated individual genes. The plot confirms that several biologically relevant genes, consistent with beta cell development and signaling, are strongly differentially expressed in our dataset, similar to the patterns observed in the publication.
+
+Functional enrichment analyses using DAVID/Enrichr and fgsea revealed overlapping as well as distinct pathways. While many pathways related to cellular signaling and beta cell function were commonly enriched across both methods, differences were observed due to variations in gene sets, pathway definitions, and thresholds for significance. These discrepancies are expected and do not undermine the biological relevance of the findings; rather, they highlight the complementarity of different enrichment approaches.
+
+Overall, despite methodological differences and a larger number of significant genes in our dataset, our results successfully capture the core biological signal reported in the publication. The enrichment analyses and volcano plot collectively demonstrate that key regulatory pathways in beta cell development and signaling are reproducibly detected, indicating that our analysis effectively replicates the main findings of the original study while providing additional insight into potentially novel genes and pathways.

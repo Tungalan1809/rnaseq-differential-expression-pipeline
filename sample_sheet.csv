@@ -1,0 +1,7 @@
+sample,bam
+exp_rep1,results/exp_rep1.Aligned.out.bam
+exp_rep2,results/exp_rep2.Aligned.out.bam
+exp_rep3,results/exp_rep3.Aligned.out.bam
+control_rep1,results/control_rep1.Aligned.out.bam
+control_rep2,results/control_rep2.Aligned.out.bam
+control_rep3,results/control_rep3.Aligned.out.bam
